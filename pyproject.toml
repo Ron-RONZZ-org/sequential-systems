@@ -1,7 +1,6 @@
 [project]
 name = "sequential-systems"
 version = "0.1.0"
-package-mode=false
 description = ""
 authors = [
     {name = "Rong Zhou",email = "ron@ronzz.org"}
@@ -13,6 +12,8 @@ dependencies = [
     "pyvisa (>=1.16.2,<2.0.0)"
 ]
 
+[tool.poetry]
+package-mode = false
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

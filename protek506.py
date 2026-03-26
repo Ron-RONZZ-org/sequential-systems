@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
 from typing import TypedDict
 
@@ -7,6 +8,11 @@ try:
     import serial
 except ImportError:  # pragma: no cover
     serial = None
+
+try:
+    from serial.tools import list_ports as serial_list_ports
+except ImportError:  # pragma: no cover
+    serial_list_ports = None
 
 
 class MeasurementFlags(TypedDict):
@@ -35,21 +41,37 @@ class Protek506:
     def open(self) -> None:
         if serial is None:
             raise RuntimeError("pyserial is required. Install it with: pip install pyserial")
-        self.ser = serial.Serial(
+        self.ser = serial.Serial(  # Configuration from Protek 506 serial protocol.
             port=self.port,
-            baudrate=2400,
+            baudrate=1200,
             bytesize=serial.SEVENBITS,
-            parity=serial.PARITY_EVEN,
-            stopbits=serial.STOPBITS_ONE,
+            parity=serial.PARITY_NONE,
+            stopbits=serial.STOPBITS_TWO,
             timeout=self.timeout,
             xonxoff=False,
             rtscts=False,
             dsrdtr=False,
         )
+        # Some USB-serial adapters latch up if modem-control lines are left asserted.
+        # Keep both lines low to match the `stty`/`cat` behavior.
+        if hasattr(self.ser, "setDTR"):
+            self.ser.setDTR(False)
+        if hasattr(self.ser, "setRTS"):
+            self.ser.setRTS(False)
 
     def close(self) -> None:
         if self.ser is not None and getattr(self.ser, "is_open", False):
+            if hasattr(self.ser, "setDTR"):
+                self.ser.setDTR(False)
+            if hasattr(self.ser, "setRTS"):
+                self.ser.setRTS(False)
             self.ser.close()
+
+    def serial_config_summary(self) -> str:
+        return (
+            f"port={self.port}, baudrate=1200, bytesize=7, parity=N, "
+            f"stopbits=2, timeout={self.timeout}, dtr=low, rts=low"
+        )
 
     def read_frame(self) -> str:
         if self.ser is None:
@@ -121,12 +143,90 @@ class Protek506:
             except (TimeoutError, ValueError) as exc:
                 print(f"Read/parse error: {exc}")
 
+    def diagnose(self) -> None:
+        print("=== Protek 506 diagnostic mode ===")
+        print(f"Target serial config: {self.serial_config_summary()}")
+        if serial is None:
+            raise RuntimeError("pyserial is required. Install it with: pip install pyserial")
+
+        version = getattr(serial, "VERSION", "unknown")
+        print(f"pyserial version: {version}")
+
+        print("Available ports:")
+        try:
+            if serial_list_ports is not None:
+                ports = serial_list_ports.comports()
+            elif hasattr(serial, "tools") and hasattr(serial.tools, "list_ports"):
+                ports = serial.tools.list_ports.comports()
+            else:
+                raise RuntimeError("serial.tools.list_ports is unavailable")
+        except Exception as exc:
+            print(f"  <failed to enumerate ports: {exc}>")
+            ports = []
+        if not ports:
+            print("  <none>")
+        for port_info in ports:
+            print(f"  - {port_info.device}")
+
+        try:
+            self.open()
+            print("Open result: success")
+            if self.ser is None:
+                print("Probe: serial handle missing after open")
+                return
+
+            raw = self.ser.read(self.FRAME_LENGTH)
+            hex_bytes = raw.hex(" ")
+            print(f"Probe read: {len(raw)} byte(s)")
+            print(f"Probe hex: {hex_bytes if hex_bytes else '<empty>'}")
+
+            if raw:
+                try:
+                    ascii_text = raw.decode("ascii")
+                    print(f"Probe ascii: {ascii_text!r}")
+                except UnicodeDecodeError:
+                    print("Probe ascii: <non-ascii bytes>")
+
+            if len(raw) == self.FRAME_LENGTH:
+                try:
+                    measurement = self.parse_frame(raw.decode("ascii"))
+                    print(
+                        "Probe parse: "
+                        f"value={measurement.value:.6g} unit={measurement.unit} "
+                        f"flags={measurement.flags['raw_flags'] or 'none'}"
+                    )
+                except (UnicodeDecodeError, ValueError) as exc:
+                    print(f"Probe parse: failed ({exc})")
+            else:
+                print(
+                    "Probe parse: skipped (incomplete frame, "
+                    f"need {self.FRAME_LENGTH} bytes)"
+                )
+        except Exception as exc:
+            print(f"Open/read failure: {exc}")
+        finally:
+            self.close()
+            print("Serial port closed")
+
 
 if __name__ == "__main__":
-    meter = Protek506(port="/dev/ttyUSB0", timeout=1.0)
+    parser = argparse.ArgumentParser(description="Read measurements from a Protek 506 multimeter.")
+    parser.add_argument("--port", default="/dev/ttyUSB0", help="Serial device path.")
+    parser.add_argument("--timeout", type=float, default=1.0, help="Serial read timeout in seconds.")
+    parser.add_argument(
+        "--diagnose",
+        action="store_true",
+        help="Run one-shot serial diagnostics and exit.",
+    )
+    args = parser.parse_args()
+
+    meter = Protek506(port=args.port, timeout=args.timeout)
     try:
-        meter.open()
-        meter.run_forever()
+        if args.diagnose:
+            meter.diagnose()
+        else:
+            meter.open()
+            meter.run_forever()
     except KeyboardInterrupt:
         print("Stopping Protek 506 reader")
     finally:
