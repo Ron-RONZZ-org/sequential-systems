@@ -66,7 +66,7 @@ class Protek506:
             raise ValueError("Received non-ASCII frame") from exc
 
     def parse_frame(self, frame: str) -> Measurement:
-        """Parse 14-byte Protek 506 frame; unit is a mode char (e.g. V, A, Ω)."""
+        """Parse 14-byte Protek506 frame; unit is the single mode character in byte 7."""
         if len(frame) != self.FRAME_LENGTH:
             raise ValueError(f"Malformed frame length: {len(frame)}")
 
@@ -112,7 +112,7 @@ class Protek506:
                     parts.append("DC")
                 raw_flags = measurement.flags["raw_flags"]
                 if raw_flags:
-                    parts.append(str(raw_flags))
+                    parts.append(raw_flags)
                 flags_text = ", ".join(parts) if parts else "none"
                 print(
                     f"Value: {measurement.value:.6g} {measurement.unit} "
