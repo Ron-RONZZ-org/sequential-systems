@@ -1,5 +1,6 @@
 import nidaqmx
 import numpy as np
+import pandas as pd
 
 with nidaqmx.Task() as task:
     task.ai_channels.add_ai_voltage_chan("Dev1/ai2")
@@ -8,4 +9,6 @@ with nidaqmx.Task() as task:
     data = task.read(number_of_samples_per_channel=1000)
     data = np.array(data)
 
-print("temperature deviation",data[:1000])
+df = pd.DataFrame(data, columns=["voltage"])
+df.to_csv("../rezulto/voltage-data.csv", index=False)
+print("Saved to ../rezulto/voltage-data.csv")
