@@ -8,4 +8,4 @@ with nidaqmx.Task() as task:
     data = task.read(number_of_samples_per_channel=1000)
     data = np.array(data)
 
-print(data[:10])
+print("temperature deviation",data[:1000])
