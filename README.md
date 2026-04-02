@@ -17,3 +17,5 @@ poetry env activate
 ```
 
 For more help on python and poetry package manager, see [this cheatsheet](https://ronzz.org/py/).
+For more help on the APIs used in this repo:
+  - [NI-DAQmx](https://nidaqmx-python.readthedocs.io/en/stable/constants.html)
